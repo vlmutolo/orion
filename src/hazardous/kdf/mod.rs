@@ -25,3 +25,6 @@ pub mod hkdf;
 
 /// PBKDF2-HMAC-SHA512 (Password-Based Key Derivation Function 2) as specified in the [RFC 8018](https://tools.ietf.org/html/rfc8018).
 pub mod pbkdf2;
+
+/// Argon2i (Key Derivation Function) as specified in 
+pub mod argon2i;
