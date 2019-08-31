@@ -147,27 +147,39 @@ impl core::fmt::Debug for Sha512 {
 impl Sha512 {
 	#[inline]
 	/// The Ch function as specified in FIPS 180-4 section 4.1.3.
-	fn ch(x: u64, y: u64, z: u64) -> u64 { z ^ (x & (y ^ z)) }
+	fn ch(x: u64, y: u64, z: u64) -> u64 {
+		z ^ (x & (y ^ z))
+	}
 
 	#[inline]
 	/// The Maj function as specified in FIPS 180-4 section 4.1.3.
-	fn maj(x: u64, y: u64, z: u64) -> u64 { (x & y) | (z & (x | y)) }
+	fn maj(x: u64, y: u64, z: u64) -> u64 {
+		(x & y) | (z & (x | y))
+	}
 
 	#[inline]
 	/// The Big Sigma 0 function as specified in FIPS 180-4 section 4.1.3.
-	fn big_sigma_0(x: u64) -> u64 { (x.rotate_right(28)) ^ x.rotate_right(34) ^ x.rotate_right(39) }
+	fn big_sigma_0(x: u64) -> u64 {
+		(x.rotate_right(28)) ^ x.rotate_right(34) ^ x.rotate_right(39)
+	}
 
 	#[inline]
 	/// The Big Sigma 1 function as specified in FIPS 180-4 section 4.1.3.
-	fn big_sigma_1(x: u64) -> u64 { (x.rotate_right(14)) ^ x.rotate_right(18) ^ x.rotate_right(41) }
+	fn big_sigma_1(x: u64) -> u64 {
+		(x.rotate_right(14)) ^ x.rotate_right(18) ^ x.rotate_right(41)
+	}
 
 	#[inline]
 	/// The Small Sigma 0 function as specified in FIPS 180-4 section 4.1.3.
-	fn small_sigma_0(x: u64) -> u64 { (x.rotate_right(1)) ^ x.rotate_right(8) ^ (x >> 7) }
+	fn small_sigma_0(x: u64) -> u64 {
+		(x.rotate_right(1)) ^ x.rotate_right(8) ^ (x >> 7)
+	}
 
 	#[inline]
 	/// The Small Sigma 1 function as specified in FIPS 180-4 section 4.1.3.
-	fn small_sigma_1(x: u64) -> u64 { (x.rotate_right(19)) ^ x.rotate_right(61) ^ (x >> 6) }
+	fn small_sigma_1(x: u64) -> u64 {
+		(x.rotate_right(19)) ^ x.rotate_right(61) ^ (x >> 6)
+	}
 
 	#[inline]
 	#[allow(clippy::many_single_char_names)]
@@ -201,9 +213,15 @@ impl Sha512 {
 	#[rustfmt::skip]
 	#[allow(clippy::many_single_char_names)]
 	/// Process data in `self.buffer`.
-	fn process(&mut self) {
+	fn process(&mut self, data: Option<&[u8]>) {
 		let mut w = [0u64; 80];
-		load_u64_into_be(&self.buffer, &mut w[..16]);
+		match data {
+			Some(bytes) => {
+				debug_assert!(bytes.len() == SHA512_BLOCKSIZE);
+				load_u64_into_be(bytes, &mut w[..16]);
+			}
+			None => load_u64_into_be(&self.buffer, &mut w[..16]),
+		}
 
 		for t in 16..80 {
 			w[t] = Self::small_sigma_1(w[t - 2])
@@ -256,6 +274,11 @@ impl Sha512 {
 	#[inline]
 	/// Increment the message length during processing of data.
 	fn increment_mlen(&mut self, length: u64) {
+		// The checked shift checks that the right-hand side is a legal shift.
+		// The result can still overflow if length > u64::max_value() / 8.
+		// Should be impossible for a user to trigger.
+		debug_assert!(length <= u64::max_value() / 8);
+
 		// left-shift to get bit-sized representation of length
 		// using .unwrap() because it should not panic in practice
 		let len = length.checked_shl(3).unwrap();
@@ -279,32 +302,35 @@ impl Sha512 {
 		}
 
 		let mut bytes = data;
-		// First fill up if there is leftover space
-		if self.leftover > 0 {
+
+		if self.leftover != 0 {
 			debug_assert!(self.leftover <= SHA512_BLOCKSIZE);
 
-			let fill = SHA512_BLOCKSIZE - self.leftover;
+			let mut want = SHA512_BLOCKSIZE - self.leftover;
+			if want > bytes.len() {
+				want = bytes.len();
+			}
 
-			if bytes.len() < fill {
-				self.buffer[self.leftover..(self.leftover + bytes.len())].copy_from_slice(&bytes);
-				self.leftover += bytes.len();
-				self.increment_mlen(bytes.len() as u64);
+			for (idx, itm) in bytes.iter().enumerate().take(want) {
+				self.buffer[self.leftover + idx] = *itm;
+			}
+
+			// Reduce by slice
+			bytes = &bytes[want..];
+			self.leftover += want;
+			self.increment_mlen(want as u64);
+
+			if self.leftover < SHA512_BLOCKSIZE {
 				return Ok(());
 			}
 
-			self.buffer[self.leftover..(self.leftover + fill)].copy_from_slice(&bytes[..fill]);
-			// Process data
-			self.process();
-			self.increment_mlen(fill as u64);
+			self.process(None);
 			self.leftover = 0;
-			// Reduce by slice
-			bytes = &bytes[fill..];
 		}
 
 		while bytes.len() >= SHA512_BLOCKSIZE {
 			// Process data
-			self.buffer.copy_from_slice(&bytes[..SHA512_BLOCKSIZE]);
-			self.process();
+			self.process(Some(bytes[..SHA512_BLOCKSIZE].as_ref()));
 			self.increment_mlen(SHA512_BLOCKSIZE as u64);
 			// Reduce by slice
 			bytes = &bytes[SHA512_BLOCKSIZE..];
@@ -342,7 +368,7 @@ impl Sha512 {
 
 		// Check for available space for length padding
 		if (SHA512_BLOCKSIZE - self.leftover) < 16 {
-			self.process();
+			self.process(None);
 			for itm in self.buffer.iter_mut().take(self.leftover) {
 				*itm = 0;
 			}
@@ -354,12 +380,12 @@ impl Sha512 {
 		self.buffer[SHA512_BLOCKSIZE - 8..SHA512_BLOCKSIZE]
 			.copy_from_slice(&self.message_len[1].to_be_bytes());
 
-		self.process();
+		self.process(None);
 
-		let mut digest = [0u8; 64];
+		let mut digest = [0u8; SHA512_OUTSIZE];
 		store_u64_into_be(&self.working_state, &mut digest);
 
-		Ok(Digest::from_slice(&digest)?)
+		Ok(Digest::from(digest))
 	}
 }
 
@@ -380,8 +406,7 @@ pub fn init() -> Sha512 {
 pub fn digest(data: &[u8]) -> Result<Digest, UnknownCryptoError> {
 	let mut state = init();
 	state.update(data)?;
-
-	Ok(state.finalize()?)
+	state.finalize()
 }
 
 #[cfg(test)]
@@ -573,7 +598,9 @@ mod public {
 
 		#[test]
 		/// Related bug: https://github.com/brycx/orion/issues/46
-		fn test_produce_same_state() { produces_same_state(b"Tests"); }
+		fn test_produce_same_state() {
+			produces_same_state(b"Tests");
+		}
 
 		#[test]
 		/// Related bug: https://github.com/brycx/orion/issues/46
@@ -682,7 +709,7 @@ mod private {
 			context.increment_mlen(12);
 			assert!(context.message_len == [0u64, 240u64]);
 			// Overflow
-			context.increment_mlen(u64::max_value());
+			context.increment_mlen(u64::max_value() / 8);
 			assert!(context.message_len == [1u64, 232u64]);
 		}
 

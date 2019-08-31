@@ -37,7 +37,7 @@
 //!
 //! # Panics:
 //! A panic will occur if:
-//! - More than 2*(2^64-1) __bits__ of data are hashed.
+//! - More than 2*(2^64-1) bytes of data are hashed.
 //!
 //! # Security:
 //! - This interface does not support supplying BLAKE2b with a secret key, and
@@ -61,7 +61,7 @@ use crate::{errors::UnknownCryptoError, hazardous::hash::blake2b};
 #[must_use]
 /// Hashing using BLAKE2b-256.
 pub fn digest(data: &[u8]) -> Result<Digest, UnknownCryptoError> {
-	Ok(blake2b::Hasher::Blake2b256.digest(data)?)
+	blake2b::Hasher::Blake2b256.digest(data)
 }
 
 // Testing public functions in the module.
@@ -72,7 +72,9 @@ mod public {
 	mod test_digest {
 		use super::*;
 		#[test]
-		fn basic_test() { let _digest = digest(b"Some data").unwrap(); }
+		fn basic_test() {
+			let _digest = digest(b"Some data").unwrap();
+		}
 
 		// Proptests. Only exectued when NOT testing no_std.
 		#[cfg(feature = "safe_api")]

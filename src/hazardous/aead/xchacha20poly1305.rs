@@ -68,25 +68,20 @@
 //!
 //! let secret_key = aead::xchacha20poly1305::SecretKey::generate();
 //! let nonce = aead::xchacha20poly1305::Nonce::generate();
+//! let ad = "Additional data".as_bytes();
+//! let message = "Data to protect".as_bytes();
 //!
-//! let ad = [
-//! 	0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
-//! 	];
-//! let plaintext = b"\
-//! Ladies and Gentlemen of the class of '99: If I could offer you o\
-//! nly one tip for the future, sunscreen would be it.";
-//!
-//! // Length of above plaintext is 114 and then we accomodate 16 for the Poly1305
+//! // Length of above message is 15 and then we accomodate 16 for the Poly1305
 //! // tag.
 //!
-//! let mut dst_out_ct = [0u8; 114 + 16];
-//! let mut dst_out_pt = [0u8; 114];
+//! let mut dst_out_ct = [0u8; 15 + 16];
+//! let mut dst_out_pt = [0u8; 15];
 //! // Encrypt and place ciphertext + tag in dst_out_ct
-//! aead::xchacha20poly1305::seal(&secret_key, &nonce, plaintext, Some(&ad), &mut dst_out_ct)?;
-//! // Verify tag, if correct then decrypt and place plaintext in dst_out_pt
+//! aead::xchacha20poly1305::seal(&secret_key, &nonce, message, Some(&ad), &mut dst_out_ct)?;
+//! // Verify tag, if correct then decrypt and place message in dst_out_pt
 //! aead::xchacha20poly1305::open(&secret_key, &nonce, &dst_out_ct, Some(&ad), &mut dst_out_pt)?;
 //!
-//! assert_eq!(dst_out_pt.as_ref(), plaintext.as_ref());
+//! assert_eq!(dst_out_pt.as_ref(), message.as_ref());
 //! # Ok::<(), orion::errors::UnknownCryptoError>(())
 //! ```
 //! [`SecretKey::generate()`]: https://docs.rs/orion/latest/orion/hazardous/stream/chacha20/struct.SecretKey.html
@@ -110,19 +105,17 @@ pub fn seal(
 	dst_out: &mut [u8],
 ) -> Result<(), UnknownCryptoError> {
 	let subkey: SecretKey =
-		SecretKey::from_slice(&chacha20::hchacha20(secret_key, &nonce.as_ref()[0..16])?)?;
+		SecretKey::from(chacha20::hchacha20(secret_key, &nonce.as_ref()[0..16])?);
 	let mut prefixed_nonce = [0u8; IETF_CHACHA_NONCESIZE];
 	prefixed_nonce[4..IETF_CHACHA_NONCESIZE].copy_from_slice(&nonce.as_ref()[16..24]);
 
 	chacha20poly1305::seal(
 		&subkey,
-		&IETFNonce::from_slice(&prefixed_nonce)?,
+		&IETFNonce::from(prefixed_nonce),
 		plaintext,
 		ad,
 		dst_out,
-	)?;
-
-	Ok(())
+	)
 }
 
 #[must_use]
@@ -135,19 +128,17 @@ pub fn open(
 	dst_out: &mut [u8],
 ) -> Result<(), UnknownCryptoError> {
 	let subkey: SecretKey =
-		SecretKey::from_slice(&chacha20::hchacha20(secret_key, &nonce.as_ref()[0..16])?)?;
-	let mut prefixed_nonce = [0u8; 12];
-	prefixed_nonce[4..12].copy_from_slice(&nonce.as_ref()[16..24]);
+		SecretKey::from(chacha20::hchacha20(secret_key, &nonce.as_ref()[0..16])?);
+	let mut prefixed_nonce = [0u8; IETF_CHACHA_NONCESIZE];
+	prefixed_nonce[4..IETF_CHACHA_NONCESIZE].copy_from_slice(&nonce.as_ref()[16..24]);
 
 	chacha20poly1305::open(
 		&subkey,
-		&IETFNonce::from_slice(&prefixed_nonce)?,
+		&IETFNonce::from(prefixed_nonce),
 		ciphertext_with_tag,
 		ad,
 		dst_out,
-	)?;
-
-	Ok(())
+	)
 }
 
 //
@@ -363,7 +354,9 @@ mod public {
 		use super::*;
 
 		// Only return true if both a and b are true.
-		fn check_all_true(a: bool, b: bool) -> bool { (a == true) && (b == true) }
+		fn check_all_true(a: bool, b: bool) -> bool {
+			(a == true) && (b == true)
+		}
 
 		quickcheck! {
 			// Sealing input, and then opening should always yield the same input.

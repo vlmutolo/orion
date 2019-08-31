@@ -29,17 +29,23 @@ use self::core::fmt;
 pub struct UnknownCryptoError;
 
 impl fmt::Display for UnknownCryptoError {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "UnknownCryptoError") }
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "UnknownCryptoError")
+	}
 }
 
 impl fmt::Debug for UnknownCryptoError {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "UnknownCryptoError") }
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "UnknownCryptoError")
+	}
 }
 
 #[cfg(feature = "safe_api")]
 // Required for rand's generators
 impl From<getrandom::Error> for UnknownCryptoError {
-	fn from(_: getrandom::Error) -> Self { UnknownCryptoError }
+	fn from(_: getrandom::Error) -> Self {
+		UnknownCryptoError
+	}
 }
 
 #[test]
@@ -51,24 +57,5 @@ fn test_unknown_crypto_error_debug_display() {
 	assert_eq!(err, "UnknownCryptoError");
 	// Tests Display impl though "{:?}"
 	let err = format!("{}", UnknownCryptoError);
-	assert_eq!(err, "UnknownCryptoError");
-}
-
-#[test]
-#[cfg(feature = "safe_api")]
-// format! is only available with std
-fn test_unknown_crypto_error_from_unavailable() {
-	let err = format!(
-		"{:?}",
-		UnknownCryptoError::from(getrandom::Error::UNAVAILABLE)
-	);
-	assert_eq!(err, "UnknownCryptoError");
-}
-
-#[test]
-#[cfg(feature = "safe_api")]
-// format! is only available with std
-fn test_unknown_crypto_error_from_unkown() {
-	let err = format!("{:?}", UnknownCryptoError::from(getrandom::Error::UNKNOWN));
 	assert_eq!(err, "UnknownCryptoError");
 }

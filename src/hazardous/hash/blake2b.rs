@@ -101,7 +101,7 @@ construct_secret_key! {
 	///
 	/// # Panics:
 	/// A panic will occur if:
-	/// - The `OsRng` fails to initialize or read from its source.
+	/// - Failure to generate random bytes securely.
 	(SecretKey, test_secret_key, 1, BLAKE2B_KEYSIZE, BLAKE2B_KEYSIZE)
 }
 
@@ -167,16 +167,16 @@ impl Hasher {
 		let mut state = init(None, size)?;
 		state.update(data)?;
 
-		Ok(state.finalize()?)
+		state.finalize()
 	}
 
 	#[must_use]
 	/// Return a `Blake2b` state selected by the given Blake2b variant.
 	pub fn init(&self) -> Result<Blake2b, UnknownCryptoError> {
 		match *self {
-			Hasher::Blake2b256 => Ok(init(None, 32)?),
-			Hasher::Blake2b384 => Ok(init(None, 48)?),
-			Hasher::Blake2b512 => Ok(init(None, 64)?),
+			Hasher::Blake2b256 => init(None, 32),
+			Hasher::Blake2b384 => init(None, 48),
+			Hasher::Blake2b512 => init(None, 64),
 		}
 	}
 }
@@ -261,11 +261,16 @@ impl Blake2b {
 		Self::prim_mix_g(m[SIGMA[ri][14]], m[SIGMA[ri][15]], 3, 4, 9, 14, w);
 	}
 
-	#[allow(clippy::needless_range_loop)]
 	/// The compression function f as defined in the RFC.
-	fn compress_f(&mut self) {
+	fn compress_f(&mut self, data: Option<&[u8]>) {
 		let mut m_vec = [0u64; 16];
-		load_u64_into_le(&self.buffer, &mut m_vec);
+		match data {
+			Some(bytes) => {
+				debug_assert!(bytes.len() == BLAKE2B_BLOCKSIZE);
+				load_u64_into_le(bytes, &mut m_vec);
+			}
+			None => load_u64_into_le(&self.buffer, &mut m_vec),
+		}
 		let mut w_vec = [
 			self.internal_state[0],
 			self.internal_state[1],
@@ -333,8 +338,7 @@ impl Blake2b {
 				// The state needs updating with the secret key padded to blocksize length
 				let pad = [0u8; BLAKE2B_BLOCKSIZE];
 				let rem = BLAKE2B_BLOCKSIZE - sk.get_length();
-				self.update(pad[..rem].as_ref())?;
-				Ok(())
+				self.update(pad[..rem].as_ref())
 			}
 			None => Ok(()),
 		}
@@ -352,7 +356,7 @@ impl Blake2b {
 
 		let mut bytes = data;
 
-		if self.leftover > 0 {
+		if self.leftover != 0 {
 			debug_assert!(self.leftover <= BLAKE2B_BLOCKSIZE);
 
 			let fill = BLAKE2B_BLOCKSIZE - self.leftover;
@@ -366,16 +370,16 @@ impl Blake2b {
 			self.buffer[self.leftover..(self.leftover + fill)].copy_from_slice(&bytes[..fill]);
 			// Process data
 			self.increment_offset(BLAKE2B_BLOCKSIZE as u64);
-			self.compress_f();
+			self.compress_f(None);
 			self.leftover = 0;
 			// Reduce by slice
 			bytes = &bytes[fill..];
 		}
 
 		while bytes.len() > BLAKE2B_BLOCKSIZE {
-			self.buffer.copy_from_slice(&bytes[..BLAKE2B_BLOCKSIZE]);
+			// Process data
 			self.increment_offset(BLAKE2B_BLOCKSIZE as u64);
-			self.compress_f();
+			self.compress_f(Some(bytes[..BLAKE2B_BLOCKSIZE].as_ref()));
 			// Reduce by slice
 			bytes = &bytes[BLAKE2B_BLOCKSIZE..];
 		}
@@ -407,12 +411,12 @@ impl Blake2b {
 		for leftover_block in self.buffer.iter_mut().skip(in_buffer_len) {
 			*leftover_block = 0;
 		}
-		self.compress_f();
+		self.compress_f(None);
 
 		let mut digest = [0u8; 64];
 		store_u64_into_le(&self.internal_state, &mut digest);
 
-		Ok(Digest::from_slice(&digest[..self.size])?)
+		Digest::from_slice(&digest[..self.size])
 	}
 }
 
@@ -665,7 +669,7 @@ mod public {
 				/// Given some data, .digest() should produce the same output as when
 				/// calling with streaming state.
 				fn prop_hasher_digest_256_same_as_streaming(data: Vec<u8>) -> bool {
-					let d256 = Hasher::Blake2b256.digest(&data[..]).unwrap();;
+					let d256 = Hasher::Blake2b256.digest(&data[..]).unwrap();
 
 					let mut state = init(None, 32).unwrap();
 					state.update(&data[..]).unwrap();
@@ -678,7 +682,7 @@ mod public {
 				/// Given some data, .digest() should produce the same output as when
 				/// calling with streaming state.
 				fn prop_hasher_digest_384_same_as_streaming(data: Vec<u8>) -> bool {
-					let d256 = Hasher::Blake2b384.digest(&data[..]).unwrap();;
+					let d256 = Hasher::Blake2b384.digest(&data[..]).unwrap();
 
 					let mut state = init(None, 48).unwrap();
 					state.update(&data[..]).unwrap();
@@ -691,7 +695,7 @@ mod public {
 				/// Given some data, .digest() should produce the same output as when
 				/// calling with streaming state.
 				fn prop_hasher_digest_512_same_as_streaming(data: Vec<u8>) -> bool {
-					let d256 = Hasher::Blake2b512.digest(&data[..]).unwrap();;
+					let d256 = Hasher::Blake2b512.digest(&data[..]).unwrap();
 
 					let mut state = init(None, 64).unwrap();
 					state.update(&data[..]).unwrap();

@@ -90,7 +90,7 @@ construct_secret_key! {
 	///
 	/// # Panics:
 	/// A panic will occur if:
-	/// - The `OsRng` fails to initialize or read from its source.
+	/// - Failure to generate random bytes securely.
 	(OneTimeKey, test_one_time_key, POLY1305_KEYSIZE, POLY1305_KEYSIZE, POLY1305_KEYSIZE)
 }
 
@@ -395,7 +395,7 @@ impl Poly1305 {
 		self.process_end_of_stream();
 		store_u32_into_le(&self.a[0..4], &mut local_buffer);
 
-		Ok(Tag::from_slice(&local_buffer)?)
+		Ok(Tag::from(local_buffer))
 	}
 }
 
@@ -421,8 +421,7 @@ pub fn init(one_time_key: &OneTimeKey) -> Poly1305 {
 pub fn poly1305(one_time_key: &OneTimeKey, data: &[u8]) -> Result<Tag, UnknownCryptoError> {
 	let mut poly_1305_state = init(one_time_key);
 	poly_1305_state.update(data)?;
-
-	Ok(poly_1305_state.finalize()?)
+	poly_1305_state.finalize()
 }
 
 #[must_use]

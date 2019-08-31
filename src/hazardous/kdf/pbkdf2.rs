@@ -93,7 +93,7 @@ construct_hmac_key! {
 	///
 	/// # Panics:
 	/// A panic will occur if:
-	/// - The `OsRng` fails to initialize or read from its source.
+	/// - Failure to generate random bytes securely.
 	(Password, SHA512_BLOCKSIZE)
 }
 
@@ -177,12 +177,7 @@ pub fn verify(
 	dst_out: &mut [u8],
 ) -> Result<bool, UnknownCryptoError> {
 	derive_key(password, salt, iterations, dst_out)?;
-
-	if util::secure_cmp(&dst_out, expected).is_err() {
-		Err(UnknownCryptoError)
-	} else {
-		Ok(true)
-	}
+	util::secure_cmp(&dst_out, expected)
 }
 
 // Testing public functions in the module.
